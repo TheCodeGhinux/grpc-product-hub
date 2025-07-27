@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package subscription;
+
+option go_package = "grpc-product/pkg/pb";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Subscription Plan Service Definition
+service SubscriptionPlanService {
+  rpc CreateSubscriptionPlan(CreateSubscriptionPlanRequest) returns (SubscriptionPlanResponse);
+  rpc GetSubscriptionPlan(GetSubscriptionPlanRequest) returns (SubscriptionPlanResponse);
+  rpc GetProductSubscriptionPlans(GetProductSubscriptionPlansRequest) returns (ListSubscriptionPlansResponse);
+  rpc UpdateSubscriptionPlan(UpdateSubscriptionPlanRequest) returns (SubscriptionPlanResponse);
+  rpc DeleteSubscriptionPlan(DeleteSubscriptionPlanRequest) returns (google.protobuf.Empty);
+}
+
+// Subscription Plan Message
+message SubscriptionPlan {
+  string id = 1;
+  string product_id = 2;
+  string plan_name = 3;
+  int32 duration = 4; // in days
+  double price = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+// Requests and Responses
+message CreateSubscriptionPlanRequest {
+  string product_id = 1;
+  string plan_name = 2;
+  int32 duration = 3;
+  double price = 4;
+}
+
+message GetSubscriptionPlanRequest {
+  string id = 1;
+}
+
+message GetProductSubscriptionPlansRequest {
+  string product_id = 1;
+}
+
+message UpdateSubscriptionPlanRequest {
+  string id = 1;
+  string plan_name = 2;
+  int32 duration = 3;
+  double price = 4;
+}
+
+message DeleteSubscriptionPlanRequest {
+  string id = 1;
+}
+
+message SubscriptionPlanResponse {
+  SubscriptionPlan plan = 1;
+}
+
+message ListSubscriptionPlansResponse {
+  repeated SubscriptionPlan plans = 1;
+}

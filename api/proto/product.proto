@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package product;
+
+option go_package = "grpc-product/pkg/pb";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+
+// Enums
+enum ProductType {
+  PRODUCT_TYPE_UNSPECIFIED = 0;
+  digital = 1;
+  physical = 2;
+  subscription = 3;
+}
+
+// Product Service Definition
+service ProductService {
+  rpc CreateProduct(CreateProductRequest) returns (ProductResponse);
+  rpc GetProduct(GetProductRequest) returns (ProductResponse);
+  rpc UpdateProduct(UpdateProductRequest) returns (ProductResponse);
+  rpc DeleteProduct(DeleteProductRequest) returns (google.protobuf.Empty);
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+}
+
+// Type-specific details
+message DigitalProductDetails {
+  int64 file_size = 1;
+  string download_link = 2;
+}
+
+message PhysicalProductDetails {
+  double weight = 1;
+  string dimensions = 2;
+}
+
+message SubscriptionProductDetails {
+  string subscription_period = 1;
+  double renewal_price = 2;
+}
+
+// Common Product Message
+message Product {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  double price = 4;
+  ProductType type = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+
+  oneof product_details {
+    DigitalProductDetails digital_details = 8;
+    PhysicalProductDetails physical_details = 9;
+    SubscriptionProductDetails subscription_details = 10;
+  }
+}
+
+// Requests and Responses
+message CreateProductRequest {
+  string name = 1;
+  string description = 2;
+  double price = 3;
+  ProductType type = 4;
+
+  oneof product_details {
+    DigitalProductDetails digital_details = 5;
+    PhysicalProductDetails physical_details = 6;
+    SubscriptionProductDetails subscription_details = 7;
+  }
+}
+
+message GetProductRequest {
+  string id = 1;
+}
+
+message UpdateProductRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  double price = 4;
+
+  oneof product_details {
+    DigitalProductDetails digital_details = 5;
+    PhysicalProductDetails physical_details = 6;
+    SubscriptionProductDetails subscription_details = 7;
+  }
+}
+
+message DeleteProductRequest {
+  string id = 1;
+}
+
+message ListProductsRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  ProductType type_filter = 3;
+}
+
+message ProductResponse {
+  Product product = 1;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+  int32 total_count = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}

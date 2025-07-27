@@ -1,115 +1,223 @@
+// Package database contains database configuration
 package database
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
+	"grpc-product/internal/models"
 	"log"
 	"os"
-	"strconv"
-	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-	_ "github.com/joho/godotenv/autoload"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-// Service represents a service that interacts with a database.
-type Service interface {
-	// Health returns a map of health status information.
-	// The keys and values in the map are service-specific.
-	Health() map[string]string
-
-	// Close terminates the database connection.
-	// It returns an error if the connection cannot be closed.
-	Close() error
+type Database struct {
+	DB *gorm.DB
 }
 
-type service struct {
-	db *sql.DB
+type DatabaseConfig struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	DBName   string
+	SSLMode  string
 }
 
-var (
-	database   = os.Getenv("BLUEPRINT_DB_DATABASE")
-	password   = os.Getenv("BLUEPRINT_DB_PASSWORD")
-	username   = os.Getenv("BLUEPRINT_DB_USERNAME")
-	port       = os.Getenv("BLUEPRINT_DB_PORT")
-	host       = os.Getenv("BLUEPRINT_DB_HOST")
-	schema     = os.Getenv("BLUEPRINT_DB_SCHEMA")
-	dbInstance *service
-)
 
-func New() Service {
-	// Reuse Connection
-	if dbInstance != nil {
-		return dbInstance
+func NewDatabase(config DatabaseConfig) (*Database, error) {
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode,
+	)
+
+	
+	var gormLogger logger.Interface
+	if os.Getenv("ENV") == "development" {
+		gormLogger = logger.Default.LogMode(logger.Info)
+	} else {
+		gormLogger = logger.Default.LogMode(logger.Error)
 	}
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&search_path=%s", username, password, host, port, database, schema)
-	db, err := sql.Open("pgx", connStr)
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: gormLogger,
+	})
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
-	dbInstance = &service{
-		db: db,
-	}
-	return dbInstance
-}
 
-// Health checks the health of the database connection by pinging the database.
-// It returns a map with keys indicating various health statistics.
-func (s *service) Health() map[string]string {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	stats := make(map[string]string)
-
-	// Ping the database
-	err := s.db.PingContext(ctx)
+	
+	sqlDB, err := db.DB()
 	if err != nil {
-		stats["status"] = "down"
-		stats["error"] = fmt.Sprintf("db down: %v", err)
-		log.Fatalf("db down: %v", err) // Log the error and terminate the program
-		return stats
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
 	}
 
-	// Database is up, add more statistics
-	stats["status"] = "up"
-	stats["message"] = "It's healthy"
+	
+	sqlDB.SetMaxIdleConns(10)
 
-	// Get database stats (like open connections, in use, idle, etc.)
-	dbStats := s.db.Stats()
-	stats["open_connections"] = strconv.Itoa(dbStats.OpenConnections)
-	stats["in_use"] = strconv.Itoa(dbStats.InUse)
-	stats["idle"] = strconv.Itoa(dbStats.Idle)
-	stats["wait_count"] = strconv.FormatInt(dbStats.WaitCount, 10)
-	stats["wait_duration"] = dbStats.WaitDuration.String()
-	stats["max_idle_closed"] = strconv.FormatInt(dbStats.MaxIdleClosed, 10)
-	stats["max_lifetime_closed"] = strconv.FormatInt(dbStats.MaxLifetimeClosed, 10)
+	
+	sqlDB.SetMaxOpenConns(100)
 
-	// Evaluate stats to provide a health message
-	if dbStats.OpenConnections > 40 { // Assuming 50 is the max for this example
-		stats["message"] = "The database is experiencing heavy load."
-	}
-
-	if dbStats.WaitCount > 1000 {
-		stats["message"] = "The database has a high number of wait events, indicating potential bottlenecks."
-	}
-
-	if dbStats.MaxIdleClosed > int64(dbStats.OpenConnections)/2 {
-		stats["message"] = "Many idle connections are being closed, consider revising the connection pool settings."
-	}
-
-	if dbStats.MaxLifetimeClosed > int64(dbStats.OpenConnections)/2 {
-		stats["message"] = "Many connections are being closed due to max lifetime, consider increasing max lifetime or revising the connection usage pattern."
-	}
-
-	return stats
+	return &Database{DB: db}, nil
 }
 
-// Close closes the database connection.
-// It logs a message indicating the disconnection from the specific database.
-// If the connection is successfully closed, it returns nil.
-// If an error occurs while closing the connection, it returns the error.
-func (s *service) Close() error {
-	log.Printf("Disconnected from database: %s", database)
-	return s.db.Close()
+
+func GetDatabaseConfig() DatabaseConfig {
+	return DatabaseConfig{
+		Host:     getEnv("DB_HOST", "localhost"),
+		Port:     getEnv("DB_PORT", "5432"),
+		User:     getEnv("DB_USER", "postgres"),
+		Password: getEnv("DB_PASSWORD", "password"),
+		DBName:   getEnv("DB_NAME", "grpc_product"),
+		SSLMode:  getEnv("DB_SSLMODE", "disable"),
+	}
+}
+
+
+func (d *Database) AutoMigrate() error {
+	log.Println("Running database migrations...")
+
+	err := d.DB.AutoMigrate(
+		&models.Product{},
+		&models.DigitalProductDetails{},
+		&models.PhysicalProductDetails{},
+		&models.SubscriptionProductDetails{},
+		&models.SubscriptionPlan{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	log.Println("Database migrations completed successfully")
+	return nil
+}
+
+
+func (d *Database) Close() error {
+	sqlDB, err := d.DB.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}
+
+
+func (d *Database) CreateIndexes() error {
+	log.Println("Creating database indexes...")
+
+	
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_products_type ON products(type);",
+		"CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at);",
+		"CREATE INDEX IF NOT EXISTS idx_subscription_plans_product_id ON subscription_plans(product_id);",
+		"CREATE INDEX IF NOT EXISTS idx_subscription_plans_duration ON subscription_plans(duration);",
+	}
+
+	for _, index := range indexes {
+		if err := d.DB.Exec(index).Error; err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
+		}
+	}
+
+	log.Println("Database indexes created successfully")
+	return nil
+}
+
+
+func (d *Database) SeedData() error {
+	log.Println("Seeding database with sample data...")
+
+	
+	var count int64
+	d.DB.Model(&models.Product{}).Count(&count)
+	if count > 0 {
+		log.Println("Database already contains data, skipping seed")
+		return nil
+	}
+
+	
+products := []models.Product{
+    {
+        Name:        "Premium Software License",
+        Description: "Annual license for premium software package",
+        Price:       99.99,
+        Type:        models.ProductTypeDigital,
+        DigitalDetails: &models.DigitalProductDetails{
+            
+            FileSize:     104857600,
+            DownloadLink: "https://url.com",
+        },
+    },
+    {
+        Name:        "Deluxe Physical Widget",
+        Description: "High-end physical widget with premium materials",
+        Price:       149.99,
+        Type:        models.ProductTypePhysical,
+        PhysicalDetails: &models.PhysicalProductDetails{
+            Weight:     2.5,
+            Dimensions: "10x20x5 cm",
+        },
+    },
+    {
+        Name:        "Gold Subscription",
+        Description: "Monthly gold-level subscription",
+        Price:       0, 
+        Type:        models.ProductTypeSubscription,
+        SubscriptionDetails: &models.SubscriptionProductDetails{
+            SubscriptionPeriod: "monthly",
+            RenewalPrice:       19.99,
+        },
+    },
+}
+
+	for _, product := range products {
+		if err := d.DB.Create(&product).Error; err != nil {
+			return fmt.Errorf("failed to seed product: %w", err)
+		}
+
+		
+		if product.Type == models.ProductTypeSubscription {
+			plans := []models.SubscriptionPlan{
+				{
+					ProductID: product.ID,
+					PlanName:  "Basic Plan",
+					Duration:  30,
+					Price:     9.99,
+				},
+				{
+					ProductID: product.ID,
+					PlanName:  "Premium Plan",
+					Duration:  365,
+					Price:     99.99,
+				},
+			}
+
+			for _, plan := range plans {
+				if err := d.DB.Create(&plan).Error; err != nil {
+					return fmt.Errorf("failed to seed subscription plan: %w", err)
+				}
+			}
+		}
+	}
+
+	log.Println("Database seeded successfully")
+	return nil
+}
+
+
+func (d *Database) HealthCheck() error {
+	sqlDB, err := d.DB.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Ping()
+}
+
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
