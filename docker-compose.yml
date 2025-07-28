@@ -1,15 +1,35 @@
+version: '3.8'
+
 services:
-  psql_bp:
+  app:
+    build: .
+    container_name: gin_app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - psql_gp
+    environment:
+      DB_HOST: psql_gp
+      DB_PORT: 5432
+      DB_USER: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_DATABASE}
+    env_file:
+      - .env
+
+  psql_gp:
     image: postgres:latest
+    container_name: gin_grpc_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${BLUEPRINT_DB_DATABASE}
-      POSTGRES_USER: ${BLUEPRINT_DB_USERNAME}
-      POSTGRES_PASSWORD: ${BLUEPRINT_DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "${BLUEPRINT_DB_PORT}:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
-      - psql_volume_bp:/var/lib/postgresql/data
+      - psql_volume_gp:/var/lib/postgresql/data
 
 volumes:
-  psql_volume_bp:
+  psql_volume_gp:

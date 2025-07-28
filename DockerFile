@@ -1,0 +1,30 @@
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+# Install git (often needed for Go module dependencies)
+RUN apk add --no-cache git
+
+WORKDIR /app
+
+# Copy go mod/sum first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of the source
+COPY . .
+
+# Build the Go binary (from cmd/server)
+RUN go build -o /main ./cmd/server
+
+# Final stage (smaller image)
+FROM alpine:latest
+
+WORKDIR /root/
+
+# Copy the binary from builder
+COPY --from=builder /main .
+
+# Expose your service port (adjust if not 8080)
+EXPOSE 8080
+
+CMD ["./main"]

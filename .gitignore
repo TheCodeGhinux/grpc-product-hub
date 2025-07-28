@@ -19,7 +19,6 @@ go.work
 tmp/
 
 # IDE specific files
-.vscode
 .idea
 
 # .env file
@@ -32,3 +31,6 @@ main
 # OS X generated file
 .DS_Store
 
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
